@@ -360,15 +360,7 @@
   .excl-table tr:last-child td { border-bottom: none; }
 
   /* ── MODAL ── */
-  .modal-overlay {
-    position: fixed; inset: 0;
-    background: rgba(15,20,30,0.55);
-    backdrop-filter: blur(3px);
-    z-index: 1000; display: none;
-    align-items: flex-start; justify-content: center;
-    padding: 24px; overflow-y: auto;
-  }
-  .modal-overlay.open { display: flex; }
+  /* modal removed - deep dive opens in new tab */
   .modal {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 14px; width: 100%; max-width: 1020px;
@@ -630,60 +622,7 @@
 
 </div><!-- /main -->
 
-<!-- DEEP DIVE MODAL -->
-<div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
-  <div class="modal" id="modal">
-    <div class="modal-header">
-      <div>
-        <div class="modal-therapist-name" id="modal-name">—</div>
-        <div class="modal-meta" id="modal-meta"></div>
-      </div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="modal-kpi-row" id="modal-kpis"></div>
-      <div class="modal-charts-row">
-        <div class="modal-chart-card">
-          <div class="modal-chart-title">Quarterly Trends by Visit Bucket</div>
-          <div style="position:relative;height:200px"><canvas id="mc-trend"></canvas></div>
-        </div>
-        <div class="modal-chart-card">
-          <div class="modal-chart-title">Visit Distribution</div>
-          <div style="position:relative;height:200px"><canvas id="mc-dist"></canvas></div>
-        </div>
-      </div>
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-          <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.4px">Case Detail</div>
-          <div class="dd-filter-row" id="dd-filters"></div>
-        </div>
-        <div class="dd-table-wrap">
-          <table class="dd-table">
-            <thead>
-              <tr>
-                <th>EMR #</th>
-                <th>Case Title</th>
-                <th>Body Region</th>
-                <th>Quarter</th>
-                <th>Total Visits</th>
-                <th>Bucket</th>
-                <th>Avg Visits/Wk</th>
-                <th title="PT-documented visits in plan of care">PT Visits</th>
-                <th title="PTA-documented visits in plan of care">PTA Visits</th>
-                <th>Discharge Note</th>
-              </tr>
-            </thead>
-            <tbody id="dd-tbody"></tbody>
-          </table>
-        </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:6px;text-align:right" id="dd-count"></div>
-        <div style="font-size:10px;color:var(--text-dim);margin-top:4px;font-family:'IBM Plex Mono',monospace">
-          ⓘ PT Visits &amp; PTA Visits reflect documented visit counts from EMR notes. Total Visits is the EMR's authoritative plan-of-care count.
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- Deep dive opens in new tab -->
 
 <script>
 // ═══════════════════════════════════════════════════════════════
@@ -711,9 +650,9 @@ let tablePage = 1;
 const PAGE_SIZE = 20;
 let sortKey = 'falloff', sortDir = -1;
 let selectedIntraClinic = null;
-let ddBucket = 'all', ddRegion = 'all', ddPta = 'all';
+let ddBucket = 'all', ddRegion = 'all', ddPta = 'all'; // kept for filter state if needed
 
-let chartDist = null, chartIntra = null, mcTrend = null, mcDist = null;
+let chartDist = null, chartIntra = null;
 
 // ═══════════════════════════════════════════════════════════════
 // INIT
@@ -1190,17 +1129,38 @@ function renderIntraChart() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// THERAPIST TABLE  (30+ cases filter applied here)
+// THERAPIST TABLE
+// 30+ case threshold based on ALL their cases (not filtered subset)
+// so filtering by quarter doesn't make therapists disappear from the table.
+// The metrics shown (falloff%, avg visits) DO reflect the filtered cases.
 // ═══════════════════════════════════════════════════════════════
 function buildSummary() {
+  const therapistFilter = document.getElementById('f-therapist').value;
   const byT = {};
+
+  // Use filteredCases for metrics
   filteredCases.forEach(c => {
     const key = `${c.therapist}|||${c.clinic}`;
     if (!byT[key]) byT[key] = { therapist: c.therapist, clinic: c.clinic, region: c.region, cases: [] };
     byT[key].cases.push(c);
   });
+
+  // Determine 30+ threshold from ALL cases (not just filtered),
+  // so selecting a single quarter doesn't hide therapists
+  const allCasesByT = {};
+  ALL_CASES.forEach(c => {
+    const key = `${c.therapist}|||${c.clinic}`;
+    allCasesByT[key] = (allCasesByT[key] || 0) + 1;
+  });
+
   return Object.values(byT)
-    .filter(t => t.cases.length >= 30)  // 30+ case threshold
+    .filter(t => {
+      const key = `${t.therapist}|||${t.clinic}`;
+      // Always show if specifically selected in dropdown
+      if (therapistFilter && t.therapist === therapistFilter) return true;
+      // Otherwise require 30+ total cases across all time
+      return (allCasesByT[key] || 0) >= 30;
+    })
     .map(t => {
       const n = t.cases.length;
       const fo = t.cases.filter(c => c.visitBucket === '1-4').length;
@@ -1294,8 +1254,6 @@ function toggleExcluded() {
 // DEEP DIVE
 // ═══════════════════════════════════════════════════════════════
 function openDive(therapist, clinic) {
-  ddBucket = 'all'; ddRegion = 'all'; ddPta = 'all';
-  // Use ALL cases for this therapist+clinic (not just filtered)
   const cases = ALL_CASES.filter(c => c.therapist === therapist && c.clinic === clinic);
   const n = cases.length;
   const fo = cases.filter(c => c.visitBucket === '1-4').length;
@@ -1306,12 +1264,7 @@ function openDive(therapist, clinic) {
   const ptaCases = cases.filter(c => c.ptaInvolved).length;
   const ptaPct = n > 0 ? (ptaCases/n*100).toFixed(1) : '—';
   const region = cases[0]?.region || '';
-
-  document.getElementById('modal-name').textContent = therapist;
-  document.getElementById('modal-meta').innerHTML = `
-    <span class="modal-meta-item">📍 ${clinic}</span>
-    <span class="modal-meta-item region-pill ${region}" style="border-radius:20px">${region}</span>
-    <span class="modal-meta-item">${n} cases total</span>`;
+  const quarters = allQuarters;
 
   const kpis = [
     ['Total Cases', n, '#2563eb'],
@@ -1321,180 +1274,345 @@ function openDive(therapist, clinic) {
     ['Discharge Note %', `${notePct}%`, '#7c3aed'],
     ['PTA Involved', ptaCases > 0 ? `${ptaCases} (${ptaPct}%)` : '—', '#15803d'],
   ];
-  document.getElementById('modal-kpis').innerHTML = kpis.map(([l,v,c]) => `
-    <div class="modal-kpi">
-      <div class="modal-kpi-label">${l}</div>
-      <div class="modal-kpi-val" style="color:${c}">${v}</div>
+
+  const BUCKETS_DD = [
+    { key: '1-4',  label: '1–4 visits',  color: '#dc2626' },
+    { key: '5-7',  label: '5–7 visits',  color: '#d97706' },
+    { key: '8-12', label: '8–12 visits', color: '#2563eb' },
+    { key: '13+',  label: '13+ visits',  color: '#16a34a' },
+  ];
+
+  // Serialize all data needed for the new tab
+  const payload = {
+    therapist, clinic, region, cases, quarters,
+    kpis, buckets: BUCKETS_DD
+  };
+
+  const html = buildDiveTabHTML(payload);
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+  // Revoke after a short delay to allow browser to load
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function buildDiveTabHTML(p) {
+  const { therapist, clinic, region, cases, quarters, kpis, buckets } = p;
+  const n = cases.length;
+
+  // Region pill colors
+  const regionColors = {
+    Blue: '#dbeafe/#1d4ed8', Green: '#dcfce7/#15803d',
+    Orange: '#fef3c7/#b45309', Red: '#fee2e2/#b91c1c', Purple: '#ede9fe/#6d28d9'
+  };
+  const [rpBg, rpFg] = (regionColors[region] || '#f0f2f5/#374151').split('/');
+
+  // Build KPI cards HTML
+  const kpiHtml = kpis.map(([l,v,c]) => `
+    <div style="background:#fff;border:1px solid #e2e5ea;border-radius:8px;padding:14px 16px;text-align:center;flex:1;min-width:120px">
+      <div style="font-size:10px;font-weight:600;color:#9298a8;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:5px">${l}</div>
+      <div style="font-size:22px;font-weight:700;letter-spacing:-0.5px;color:${c}">${v}</div>
     </div>`).join('');
 
-  // Charts
-  if (mcTrend) { mcTrend.destroy(); mcTrend = null; }
-  if (mcDist)  { mcDist.destroy();  mcDist = null; }
+  // Build trend chart data
+  const trendDatasets = buckets.map(b => ({
+    label: b.key + ' visits',
+    data: quarters.map(q => cases.filter(c => c.quarter===q && c.visitBucket===b.key).length),
+    borderColor: b.color, backgroundColor: b.color + '22',
+    tension: 0.3, fill: true, borderWidth: 2, pointRadius: 3, pointBackgroundColor: b.color,
+  }));
 
-  // Quarterly trend
-  mcTrend = new Chart(document.getElementById('mc-trend'), {
-    type: 'line',
-    data: {
-      labels: allQuarters,
-      datasets: BUCKETS.map((b,i) => ({
-        label: b.key + ' visits',
-        data: allQuarters.map(q => cases.filter(c => c.quarter===q && c.visitBucket===b.key).length),
-        borderColor: b.color,
-        backgroundColor: b.color + '22',
-        tension: 0.3, fill: true, borderWidth: 2, pointRadius: 3, pointBackgroundColor: b.color,
-      }))
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: '#5a6075', font: { family: 'Inter', size: 11 }, boxWidth: 10 } } },
-      scales: {
-        x: { ticks: { color: '#5a6075', font: { family: 'Inter', size: 10 } }, grid: { color: '#e2e5ea88' } },
-        y: { ticks: { color: '#5a6075', font: { family: 'Inter', size: 10 } }, grid: { color: '#e2e5ea88' }, beginAtZero: true }
+  // Build donut data
+  const donutData = buckets.map(b => cases.filter(c => c.visitBucket===b.key).length);
+
+  // Build table rows HTML (initial render - all cases)
+  function buildTableRows(rows) {
+    const pillColors = { '1-4': '#fef2f2/#dc2626', '5-7': '#fffbeb/#d97706', '8-12': '#eff4ff/#2563eb', '13+': '#f0fdf4/#16a34a' };
+    return rows.map(c => {
+      const [pb, pf] = (pillColors[c.visitBucket]||'#f0f2f5/#374151').split('/');
+      const noteIcon = c.hasDischargeNote
+        ? `<span style="color:#16a34a;font-weight:600;font-size:11px">✓ Yes</span>`
+        : `<span style="color:#9298a8;font-size:11px">No</span>`;
+      const ptCell = c.ptVisits > 0
+        ? `<span style="font-family:monospace;font-size:12px;color:#2563eb;font-weight:600">${c.ptVisits}</span>`
+        : `<span style="color:#9298a8;font-size:11px">—</span>`;
+      let ptaCell = `<span style="color:#9298a8;font-size:11px">—</span>`;
+      if (c.ptaInvolved && c.ptaVisits > 0) {
+        const pct = c.ptVisits + c.ptaVisits > 0 ? Math.round(c.ptaVisits/(c.ptVisits+c.ptaVisits)*100) : 0;
+        const nameShort = (c.ptaNames||'PTA').split(',')[0].trim();
+        const hasMore = (c.ptaNames||'').includes(',');
+        ptaCell = `<span style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:500;font-family:monospace" title="${c.ptaNames}: ${c.ptaVisits} visits (${pct}%)">${c.ptaVisits}</span> <span style="font-size:9px;color:#9298a8;font-family:monospace">${nameShort}${hasMore?'+':''}</span>`;
       }
-    }
-  });
-
-  // Distribution donut
-  mcDist = new Chart(document.getElementById('mc-dist'), {
-    type: 'doughnut',
-    data: {
-      labels: BUCKETS.map(b => b.label),
-      datasets: [{
-        data: BUCKETS.map(b => cases.filter(c => c.visitBucket===b.key).length),
-        backgroundColor: BUCKETS.map(b => b.color + 'cc'),
-        borderColor: BUCKETS.map(b => b.color),
-        borderWidth: 1.5,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, cutout: '55%',
-      plugins: {
-        legend: { position: 'right', labels: { color: '#5a6075', font: { family: 'Inter', size: 11 }, boxWidth: 10 } },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw} (${n>0?(ctx.raw/n*100).toFixed(1):0}%)` } }
-      }
-    }
-  });
-
-  buildDDFilters(cases);
-  renderDDTable(cases);
-  document.getElementById('modal-overlay').classList.add('open');
-  document.body.style.overflow = 'hidden';
-}
-
-function buildDDFilters(cases) {
-  const regions = [...new Set(cases.map(c => c.bodyRegion))].sort();
-  const ptaCount = cases.filter(c => c.ptaInvolved).length;
-  const c = document.getElementById('dd-filters');
-  c.innerHTML = '<span class="dd-filter-label">Visit bucket:</span>';
-
-  const bucketTabs = [
-    {val:'all', label:'All', cls:''},
-    {val:'1-4', label:'1–4', cls:'b14'},
-    {val:'5-7', label:'5–7', cls:'b57'},
-    {val:'8-12', label:'8–12', cls:'b812'},
-    {val:'13+', label:'13+', cls:'b13p'},
-  ];
-  bucketTabs.forEach(b => {
-    const el = document.createElement('button');
-    el.type = 'button';
-    el.className = `dd-tab ${b.cls} ${ddBucket===b.val?'active':''}`;
-    el.textContent = b.label;
-    el.onclick = () => { ddBucket = b.val; buildDDFilters(cases); renderDDTable(cases); };
-    c.appendChild(el);
-  });
-
-  const sep = document.createElement('div'); sep.className = 'dd-sep'; c.appendChild(sep);
-
-  const rl = document.createElement('span'); rl.className = 'dd-filter-label'; rl.textContent = 'Region:'; c.appendChild(rl);
-  const allR = document.createElement('button');
-  allR.type = 'button';
-  allR.className = `dd-tab ${ddRegion==='all'?'active':''}`;
-  allR.textContent = 'All';
-  allR.onclick = () => { ddRegion = 'all'; buildDDFilters(cases); renderDDTable(cases); };
-  c.appendChild(allR);
-  regions.forEach(r => {
-    const el = document.createElement('button');
-    el.type = 'button';
-    el.className = `dd-tab ${ddRegion===r?'active':''}`;
-    el.textContent = r;
-    el.onclick = () => { ddRegion = r; buildDDFilters(cases); renderDDTable(cases); };
-    c.appendChild(el);
-  });
-
-  if (ptaCount > 0) {
-    const sep2 = document.createElement('div'); sep2.className = 'dd-sep'; c.appendChild(sep2);
-    const pl = document.createElement('span'); pl.className = 'dd-filter-label'; pl.textContent = 'PTA:'; c.appendChild(pl);
-    [
-      {val:'all', label:'All'},
-      {val:'pta', label:`PTA involved (${ptaCount})`},
-      {val:'pt', label:'PT only'},
-    ].forEach(b => {      const el = document.createElement('button');
-      el.type = 'button';
-      el.className = `dd-tab ${ddPta===b.val?'active':''}`;
-      el.textContent = b.label;
-      el.onclick = () => { ddPta = b.val; buildDDFilters(cases); renderDDTable(cases); };
-      c.appendChild(el);
-    });
+      return `<tr class="tr-data" data-bucket="${c.visitBucket}" data-region="${c.bodyRegion}" data-pta="${c.ptaInvolved?'1':'0'}" data-quarter="${c.quarter||''}">
+        <td style="font-family:monospace;font-size:11px;color:#9298a8">${c.emr}</td>
+        <td style="font-weight:500;color:#1a1d23;max-width:200px;overflow:hidden;text-overflow:ellipsis">${c.caseTitle}</td>
+        <td style="color:#5a6075">${c.bodyRegion}</td>
+        <td style="font-family:monospace;font-size:11px">${c.quarter||'—'}</td>
+        <td style="font-family:monospace;font-weight:600;color:#1a1d23">${c.totalVisits}</td>
+        <td><span style="background:${pb};color:${pf};padding:2px 8px;border-radius:20px;font-size:10px;font-weight:500">${c.visitBucket}</span></td>
+        <td style="font-family:monospace">${c.avgVisitsPerWeek}</td>
+        <td>${ptCell}</td>
+        <td>${ptaCell}</td>
+        <td>${noteIcon}</td>
+      </tr>`;
+    }).join('');
   }
-}
 
-function renderDDTable(cases) {
-  let rows = cases;
-  if (ddBucket !== 'all') rows = rows.filter(c => c.visitBucket === ddBucket);
-  if (ddRegion !== 'all') rows = rows.filter(c => c.bodyRegion === ddRegion);
-  if (ddPta === 'pta') rows = rows.filter(c => c.ptaInvolved);
-  if (ddPta === 'pt') rows = rows.filter(c => !c.ptaInvolved);
-  rows = rows.slice().sort((a,b) => a.totalVisits - b.totalVisits);
+  const sortedCases = [...cases].sort((a,b) => a.totalVisits - b.totalVisits);
+  const tableRows = buildTableRows(sortedCases);
+  const bodyRegions = [...new Set(cases.map(c => c.bodyRegion))].sort();
+  const ptaCount = cases.filter(c => c.ptaInvolved).length;
 
-  const pillCls = {'1-4':'b14','5-7':'b57','8-12':'b812','13+':'b13p'};
-  const tb = document.getElementById('dd-tbody');
-  tb.innerHTML = '';
-  rows.forEach(c => {
-    const noteIcon = c.hasDischargeNote
-      ? `<span style="color:var(--green);font-weight:600;font-size:11px">✓ Yes</span>`
-      : `<span style="color:var(--text-dim);font-size:11px">No</span>`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Deep Dive — ${therapist}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"><\/script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',sans-serif;background:#f5f6f8;color:#1a1d23;font-size:14px;line-height:1.5}
+  .header{background:#fff;border-bottom:1px solid #e2e5ea;padding:18px 32px;display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .header-left h1{font-size:20px;font-weight:700;letter-spacing:-.3px}
+  .header-left h1 span{color:#2563eb}
+  .meta-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+  .meta-pill{font-size:11px;color:#5a6075;background:#f0f2f5;border:1px solid #e2e5ea;padding:2px 9px;border-radius:20px}
+  .back-btn{background:#f0f2f5;border:1px solid #d0d4db;color:#5a6075;padding:7px 14px;border-radius:8px;font-size:12px;cursor:pointer;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;gap:5px;transition:all .15s}
+  .back-btn:hover{border-color:#2563eb;color:#2563eb;background:#eff4ff}
+  .main{padding:24px 32px;display:flex;flex-direction:column;gap:22px;max-width:1400px;margin:0 auto}
+  .kpi-row{display:flex;gap:12px;flex-wrap:wrap}
+  .section-card{background:#fff;border:1px solid #e2e5ea;border-radius:10px;padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .section-title{font-size:11px;font-weight:600;color:#9298a8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:14px}
+  .charts-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .filter-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .flabel{font-size:11px;color:#9298a8;font-weight:500;margin-right:2px}
+  .ftab{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid #d0d4db;background:#fff;color:#5a6075;transition:all .12s;font-family:'Inter',sans-serif}
+  .ftab:hover{border-color:#2563eb;color:#2563eb;background:#eff4ff}
+  .ftab.active{background:#eff4ff;border-color:#2563eb;color:#2563eb}
+  .ftab.b14.active{background:#fef2f2;border-color:#dc2626;color:#dc2626}
+  .ftab.b57.active{background:#fffbeb;border-color:#d97706;color:#d97706}
+  .ftab.b812.active{background:#eff4ff;border-color:#2563eb;color:#2563eb}
+  .ftab.b13p.active{background:#f0fdf4;border-color:#16a34a;color:#16a34a}
+  .fsep{width:1px;height:16px;background:#d0d4db;margin:0 2px}
+  .table-wrap{overflow-x:auto;max-height:520px;overflow-y:auto;border:1px solid #e2e5ea;border-radius:8px}
+  table{width:100%;border-collapse:collapse}
+  th{padding:9px 13px;text-align:left;font-size:11px;font-weight:600;color:#9298a8;text-transform:uppercase;letter-spacing:.4px;background:#f0f2f5;border-bottom:1px solid #e2e5ea;position:sticky;top:0;white-space:nowrap}
+  td{padding:9px 13px;font-size:12px;border-bottom:1px solid #e2e5ea;color:#5a6075;white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover td{background:#f8f9fc}
+  .count-line{font-size:11px;color:#9298a8;margin-top:6px;text-align:right;font-family:'IBM Plex Mono',monospace}
+  .footnote{font-size:10px;color:#9298a8;margin-top:4px;font-family:'IBM Plex Mono',monospace}
+  ::-webkit-scrollbar{width:5px;height:5px}
+  ::-webkit-scrollbar-track{background:#f0f2f5}
+  ::-webkit-scrollbar-thumb{background:#d0d4db;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <h1><span>${therapist}</span> — Deep Dive</h1>
+    <div class="meta-pills">
+      <span class="meta-pill">📍 ${clinic}</span>
+      <span class="meta-pill" style="background:${rpBg};color:${rpFg}">${region}</span>
+      <span class="meta-pill">${n} cases · 2025–2026</span>
+    </div>
+  </div>
+  <button class="back-btn" onclick="window.close()">✕ Close Tab</button>
+</div>
 
-    // PT visits cell
-    const ptCell = c.ptVisits > 0
-      ? `<span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--accent);font-weight:600">${c.ptVisits}</span>`
-      : `<span style="color:var(--text-dim);font-size:11px">—</span>`;
+<div class="main">
 
-    // PTA visits cell — show name on hover, count prominently
-    let ptaCell;
-    if (c.ptaInvolved && c.ptaVisits > 0) {
-      const names = c.ptaNames || 'PTA';
-      const pct = c.ptVisits + c.ptaVisits > 0
-        ? Math.round(c.ptaVisits / (c.ptVisits + c.ptaVisits) * 100)
-        : 0;
-      ptaCell = `<span class="pta-badge" title="${names}: ${c.ptaVisits} visit${c.ptaVisits!==1?'s':''} (${pct}% of documented)">${c.ptaVisits}</span>
-        <span style="font-size:9px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;margin-left:3px">${names.split(',')[0].trim()}${names.includes(',')?'+':''}</span>`;
-    } else {
-      ptaCell = `<span style="color:var(--text-dim);font-size:11px">—</span>`;
+  <!-- KPIs -->
+  <div class="kpi-row">${kpiHtml}</div>
+
+  <!-- Charts -->
+  <div class="charts-row">
+    <div class="section-card">
+      <div class="section-title">Quarterly Trends by Visit Bucket</div>
+      <div style="position:relative;height:220px"><canvas id="chart-trend"></canvas></div>
+    </div>
+    <div class="section-card">
+      <div class="section-title">Total Visit Distribution</div>
+      <div style="position:relative;height:220px"><canvas id="chart-dist"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Case Table -->
+  <div class="section-card">
+    <div class="section-title">Case Detail</div>
+    <div class="filter-row" id="filter-row">
+      <span class="flabel">Visit bucket:</span>
+      <button class="ftab active" data-filter-bucket="all" onclick="applyTabFilter(this,'bucket')">All</button>
+      <button class="ftab b14" data-filter-bucket="1-4" onclick="applyTabFilter(this,'bucket')">1–4</button>
+      <button class="ftab b57" data-filter-bucket="5-7" onclick="applyTabFilter(this,'bucket')">5–7</button>
+      <button class="ftab b812" data-filter-bucket="8-12" onclick="applyTabFilter(this,'bucket')">8–12</button>
+      <button class="ftab b13p" data-filter-bucket="13+" onclick="applyTabFilter(this,'bucket')">13+</button>
+      <div class="fsep"></div>
+      <span class="flabel">Body region:</span>
+      <button class="ftab active" data-filter-region="all" onclick="applyTabFilter(this,'region')">All</button>
+      ${bodyRegions.map(r => `<button class="ftab" data-filter-region="${r}" onclick="applyTabFilter(this,'region')">${r}</button>`).join('')}
+      ${ptaCount > 0 ? `<div class="fsep"></div><span class="flabel">PTA:</span>
+      <button class="ftab active" data-filter-pta="all" onclick="applyTabFilter(this,'pta')">All</button>
+      <button class="ftab" data-filter-pta="pta" onclick="applyTabFilter(this,'pta')">PTA involved (${ptaCount})</button>
+      <button class="ftab" data-filter-pta="pt" onclick="applyTabFilter(this,'pta')">PT only</button>` : ''}
+    </div>
+    <!-- Quarter filter row -->
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:#f8f9fc;border:1px solid #e2e5ea;border-radius:8px">
+      <span class="flabel">Quarters:</span>
+      <button class="ftab" id="q-toggle-all" onclick="toggleAllQTab()" style="font-size:10px;padding:3px 9px">Toggle All</button>
+      <div class="fsep"></div>
+      ${quarters.map(q => `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;color:#5a6075">
+        <input type="checkbox" class="q-check" value="${q}" checked onchange="applyQuarterFilter()" style="accent-color:#2563eb;cursor:pointer">${q}
+      </label>`).join('')}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>EMR #</th><th>Case Title</th><th>Body Region</th><th>Quarter</th>
+            <th>Total Visits</th><th>Bucket</th><th>Avg Visits/Wk</th>
+            <th title="PT-documented visits">PT Visits</th>
+            <th title="PTA-documented visits">PTA Visits</th>
+            <th>Discharge Note</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">${tableRows}</tbody>
+      </table>
+    </div>
+    <div class="count-line" id="count-line">${n} case${n!==1?'s':''} shown</div>
+    <div class="footnote">ⓘ PT Visits &amp; PTA Visits reflect documented visit counts from EMR notes. Total Visits is the EMR's authoritative plan-of-care count.</div>
+  </div>
+
+</div>
+
+<script>
+const CASES = ${JSON.stringify(cases)};
+const QUARTERS = ${JSON.stringify(quarters)};
+const BUCKETS_DATA = ${JSON.stringify(buckets)};
+
+// Charts
+let trendChart, distChart;
+const trendCtx = document.getElementById('chart-trend');
+trendChart = new Chart(trendCtx, {
+  type: 'line',
+  data: {
+    labels: QUARTERS,
+    datasets: BUCKETS_DATA.map(b => ({
+      label: b.key + ' visits',
+      data: QUARTERS.map(q => CASES.filter(c => c.quarter===q && c.visitBucket===b.key).length),
+      borderColor: b.color, backgroundColor: b.color + '22',
+      tension: 0.3, fill: true, borderWidth: 2, pointRadius: 3, pointBackgroundColor: b.color,
+    }))
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#5a6075', font: { family: 'Inter', size: 11 }, boxWidth: 10 } } },
+    scales: {
+      x: { ticks: { color: '#5a6075', font: { family: 'Inter', size: 10 } }, grid: { color: '#e2e5ea88' } },
+      y: { ticks: { color: '#5a6075', font: { family: 'Inter', size: 10 } }, grid: { color: '#e2e5ea88' }, beginAtZero: true }
     }
+  }
+});
 
-    tb.innerHTML += `<tr>
-      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-dim)">${c.emr}</td>
-      <td style="color:var(--text);font-weight:500">${c.caseTitle}</td>
-      <td>${c.bodyRegion}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-size:11px">${c.quarter||'—'}</td>
-      <td style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--text)">${c.totalVisits}</td>
-      <td><span class="dd-pill ${pillCls[c.visitBucket]}">${c.visitBucket}</span></td>
-      <td style="font-family:'IBM Plex Mono',monospace">${c.avgVisitsPerWeek}</td>
-      <td>${ptCell}</td>
-      <td>${ptaCell}</td>
-      <td>${noteIcon}</td>
-    </tr>`;
+const distCtx = document.getElementById('chart-dist');
+distChart = new Chart(distCtx, {
+  type: 'doughnut',
+  plugins: [ChartDataLabels],
+  data: {
+    labels: BUCKETS_DATA.map(b => b.label),
+    datasets: [{
+      data: BUCKETS_DATA.map(b => CASES.filter(c => c.visitBucket===b.key).length),
+      backgroundColor: BUCKETS_DATA.map(b => b.color + 'cc'),
+      borderColor: BUCKETS_DATA.map(b => b.color),
+      borderWidth: 1.5,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, cutout: '52%',
+    plugins: {
+      legend: { position: 'right', labels: { color: '#5a6075', font: { family: 'Inter', size: 11 }, boxWidth: 10 } },
+      datalabels: {
+        display: ctx => ctx.dataset.data[ctx.dataIndex] > 0,
+        color: '#fff', font: { family: 'IBM Plex Mono', size: 11, weight: '600' }, textAlign: 'center',
+        formatter: (v, ctx) => { const t = CASES.length; return t > 0 ? v + '\\n' + (v/t*100).toFixed(1) + '%' : ''; }
+      },
+      tooltip: { callbacks: { label: ctx => ' ' + ctx.label + ': ' + ctx.raw + ' (' + (CASES.length > 0 ? (ctx.raw/CASES.length*100).toFixed(1) : 0) + '%)' } }
+    }
+  }
+});
+
+// ── Filter state ──────────────────────────────────────────────
+let fBucket = 'all', fRegion = 'all', fPta = 'all';
+let selectedQs = new Set(QUARTERS);
+
+function applyTabFilter(btn, group) {
+  // Update active on the clicked group
+  document.querySelectorAll(\`.ftab[data-filter-\${group}]\`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (group === 'bucket') fBucket = btn.dataset.filterBucket;
+  if (group === 'region') fRegion = btn.dataset.filterRegion;
+  if (group === 'pta') fPta = btn.dataset.filterPta;
+  refreshTable();
+}
+
+function applyQuarterFilter() {
+  selectedQs = new Set([...document.querySelectorAll('.q-check:checked')].map(c => c.value));
+  updateTrendChart();
+  refreshTable();
+}
+
+function toggleAllQTab() {
+  const checks = document.querySelectorAll('.q-check');
+  const allChecked = [...checks].every(c => c.checked);
+  checks.forEach(c => c.checked = !allChecked);
+  applyQuarterFilter();
+}
+
+function updateTrendChart() {
+  const activeQs = selectedQs.size > 0 ? QUARTERS.filter(q => selectedQs.has(q)) : QUARTERS;
+  trendChart.data.labels = activeQs;
+  trendChart.data.datasets.forEach((ds, i) => {
+    const b = BUCKETS_DATA[i];
+    ds.data = activeQs.map(q => CASES.filter(c => c.quarter===q && c.visitBucket===b.key).length);
   });
-  document.getElementById('dd-count').textContent = `${rows.length} case${rows.length!==1?'s':''} shown`;
+  trendChart.update();
+
+  // Update donut to reflect quarter filter
+  const filteredForDonut = CASES.filter(c => selectedQs.size === 0 || selectedQs.has(c.quarter));
+  const tot = filteredForDonut.length;
+  distChart.data.datasets[0].data = BUCKETS_DATA.map(b => filteredForDonut.filter(c => c.visitBucket===b.key).length);
+  distChart.options.plugins.datalabels.formatter = (v) => tot > 0 ? v + '\\n' + (v/tot*100).toFixed(1)+'%' : '';
+  distChart.update();
 }
 
-function handleOverlayClick(e) { if (e.target === document.getElementById('modal-overlay')) closeModal(); }
-function closeModal() {
-  document.getElementById('modal-overlay').classList.remove('open');
-  document.body.style.overflow = '';
-  if (mcTrend) { mcTrend.destroy(); mcTrend = null; }
-  if (mcDist)  { mcDist.destroy();  mcDist = null; }
+function refreshTable() {
+  let visible = 0;
+  document.querySelectorAll('tr.tr-data').forEach(tr => {
+    const qOk = selectedQs.size === 0 || selectedQs.has(tr.dataset.quarter);
+    const show =
+      (fBucket === 'all' || tr.dataset.bucket === fBucket) &&
+      (fRegion === 'all' || tr.dataset.region === fRegion) &&
+      (fPta === 'all' || (fPta === 'pta' && tr.dataset.pta === '1') || (fPta === 'pt' && tr.dataset.pta === '0')) &&
+      qOk;
+    tr.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('count-line').textContent = visible + ' case' + (visible!==1?'s':'') + ' shown';
 }
+
+// Init filter active states
+document.querySelector('[data-filter-bucket="all"]')?.classList.add('active');
+document.querySelector('[data-filter-region="All"]')?.classList.add('active');
+document.querySelector('[data-filter-pta="all"]')?.classList.add('active');
+<\/script>
+</body>
+</html>`;
+}
+
+// Deep dive opens in new tab - no modal to close
 
 // ═══════════════════════════════════════════════════════════════
 // BOOT

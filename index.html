@@ -571,7 +571,7 @@
   <div>
     <div class="section-header">
       <h2>Therapist Summary</h2>
-      <span class="section-tag">therapists with 30+ cases · click Deep Dive for detail</span>
+      <span class="section-tag">25+ cases · selected therapists always shown · click Deep Dive for detail</span>
     </div>
     <div class="table-wrap">
       <div class="table-toolbar">
@@ -773,8 +773,8 @@ function renderAll() {
   // Count qualifying therapists in filtered set
   const thCounts = {};
   filteredCases.forEach(c => { thCounts[c.therapist] = (thCounts[c.therapist]||0)+1; });
-  const qualTh = Object.values(thCounts).filter(n => n >= 30).length;
-  document.getElementById('hdr-th-count').textContent = qualTh + ' therapists (30+)';
+  const qualTh = Object.values(thCounts).filter(n => n >= 25).length;
+  document.getElementById('hdr-th-count').textContent = qualTh + ' therapists (25+)';
   renderKPIs();
   renderBuckets();
   renderDistChart();
@@ -1130,10 +1130,15 @@ function renderIntraChart() {
 
 // ═══════════════════════════════════════════════════════════════
 // THERAPIST TABLE
-// 30+ case threshold based on ALL their cases (not filtered subset)
+// 25+ case threshold based on ALL their cases (not filtered subset)
 // so filtering by quarter doesn't make therapists disappear from the table.
 // The metrics shown (falloff%, avg visits) DO reflect the filtered cases.
+// Specific therapists are exempt from the threshold and always shown.
 // ═══════════════════════════════════════════════════════════════
+const THRESHOLD_EXEMPT = new Set([
+  'Josh Randall', 'Emma Alfred', 'Greg Vespe', 'James Picard', 'Dena King'
+]);
+
 function buildSummary() {
   const therapistFilter = document.getElementById('f-therapist').value;
   const byT = {};
@@ -1145,7 +1150,7 @@ function buildSummary() {
     byT[key].cases.push(c);
   });
 
-  // Determine 30+ threshold from ALL cases (not just filtered),
+  // Determine threshold from ALL cases (not just filtered),
   // so selecting a single quarter doesn't hide therapists
   const allCasesByT = {};
   ALL_CASES.forEach(c => {
@@ -1158,8 +1163,10 @@ function buildSummary() {
       const key = `${t.therapist}|||${t.clinic}`;
       // Always show if specifically selected in dropdown
       if (therapistFilter && t.therapist === therapistFilter) return true;
-      // Otherwise require 30+ total cases across all time
-      return (allCasesByT[key] || 0) >= 30;
+      // Always show exempt therapists regardless of case count
+      if (THRESHOLD_EXEMPT.has(t.therapist)) return true;
+      // Otherwise require 25+ total cases across all time
+      return (allCasesByT[key] || 0) >= 25;
     })
     .map(t => {
       const n = t.cases.length;
@@ -1211,7 +1218,7 @@ function renderTable() {
     </tr>`;
   });
 
-  document.getElementById('table-count').textContent = `${total} therapist${total!==1?'s':''} (30+ cases)`;
+  document.getElementById('table-count').textContent = `${total} therapist${total!==1?'s':''} (25+ cases)`;
   document.getElementById('pg-info').textContent = `Page ${tablePage} of ${pages}`;
   document.getElementById('pg-prev').disabled = tablePage <= 1;
   document.getElementById('pg-next').disabled = tablePage >= pages;

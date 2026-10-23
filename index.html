@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Patient Drop-off Dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';s.onload=function(){window.__ptRenderAll&&window.__ptRenderAll();};document.head.appendChild(s);"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js';s.onload=function(){window.__ptRenderAll&&window.__ptRenderAll();};document.head.appendChild(s);"></script>
 <style>
 :root{
   --ink:#1c2430;
@@ -537,6 +537,11 @@ function renderDistribution(filtered){
     listEl.appendChild(row);
   });
 
+  if (typeof Chart === 'undefined'){
+    var donutParent = document.getElementById('donutChart').parentNode;
+    donutParent.innerHTML = '<div class="empty-note">Chart library failed to load — the numbers above are still accurate. Try refreshing the page.</div>';
+    return;
+  }
   var ctx = document.getElementById('donutChart').getContext('2d');
   var data = BUCKET_ORDER.map(function(b){ return counts[b]; });
   if (donutChart) donutChart.destroy();
@@ -635,6 +640,10 @@ function renderClinicChart(){
     return;
   }
 
+  if (typeof Chart === 'undefined'){
+    wrap.innerHTML = '<div class="empty-note">Chart library failed to load — try refreshing the page. (The therapist table below is unaffected.)</div>';
+    return;
+  }
   var ctx = document.getElementById('clinicChart').getContext('2d');
   if (clinicChart) clinicChart.destroy();
   var barColors = rows.map(function(r){ return r.therapist === state.therapist ? '#1c2430' : '#3b6fd6'; });
@@ -810,16 +819,21 @@ document.getElementById('exclToggle').addEventListener('click', function(){
 // ---------------------------------------------------------------
 // Master render
 // ---------------------------------------------------------------
+function safeRender(label, fn){
+  try { fn(); }
+  catch(e){ console.error('[dashboard] ' + label + ' failed:', e); }
+}
 function renderAll(){
   var filtered = getFilteredCases();
-  renderKPIs(filtered);
-  renderDistribution(filtered);
-  renderRegionGrid(filtered);
-  renderClinicChart();
+  safeRender('renderKPIs', function(){ renderKPIs(filtered); });
+  safeRender('renderDistribution', function(){ renderDistribution(filtered); });
+  safeRender('renderRegionGrid', function(){ renderRegionGrid(filtered); });
+  safeRender('renderClinicChart', function(){ renderClinicChart(); });
   state.page = 1;
-  renderTherapistTable();
-  renderExcluded();
+  safeRender('renderTherapistTable', function(){ renderTherapistTable(); });
+  safeRender('renderExcluded', function(){ renderExcluded(); });
 }
+window.__ptRenderAll = renderAll; // exposed so a CDN fallback retry can re-trigger chart rendering
 
 // ---------------------------------------------------------------
 // Filter control events
@@ -877,8 +891,8 @@ document.getElementById('resetBtn').addEventListener('click', function(){
 var DEEP_DIVE_TEMPLATE = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">' +
 '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
 '<title>Deep Dive — __THERAPIST_NAME__</title>' +
-'<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"><\/script>' +
-'<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"><\/script>' +
+'<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" onerror="this.onerror=null;var s=document.createElement(\'script\');s.src=\'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js\';document.head.appendChild(s);"><\/script>' +
+'<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js" onerror="this.onerror=null;var s=document.createElement(\'script\');s.src=\'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js\';document.head.appendChild(s);"><\/script>' +
 '<style>' +
 ':root{--ink:#1c2430;--ink-soft:#5b6674;--line:#e2e6ea;--line-soft:#eef1f4;--bg:#f6f7f9;--panel:#fff;--shadow:0 1px 2px rgba(20,26,36,.05),0 4px 14px rgba(20,26,36,.04);--radius:10px;}' +
 '*{box-sizing:border-box;}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}' +
@@ -979,6 +993,11 @@ var DEEP_DIVE_TEMPLATE = '<!DOCTYPE html><html lang="en"><head><meta charset="UT
 'var ptaN=f.filter(function(c){return c.ptaVisits>0;}).length;' +
 'document.getElementById("kPTA").textContent=f.length?pct(ptaN,f.length).toFixed(1)+"%":"—";' +
 'var bcounts={};BUCKETS.forEach(function(b){bcounts[b]=0;});f.forEach(function(c){if(c.bucket)bcounts[c.bucket]++;});' +
+'if(typeof Chart==="undefined"){' +
+'document.getElementById("cBucket").parentNode.innerHTML="<div class=\\"empty\\">Chart library failed to load — try refreshing.</div>";' +
+'document.getElementById("cRegion").parentNode.innerHTML="<div class=\\"empty\\">Chart library failed to load — try refreshing.</div>";' +
+'}else{' +
+'try{' +
 'var ctx1=document.getElementById("cBucket").getContext("2d");' +
 'if(bucketChart)bucketChart.destroy();' +
 'bucketChart=new Chart(ctx1,{type:"bar",data:{labels:BUCKETS,datasets:[{label:"Cases",data:BUCKETS.map(function(b){return bcounts[b];}),backgroundColor:BUCKETS.map(function(b){return BUCKET_COLOR[b];})}]},' +
@@ -989,6 +1008,8 @@ var DEEP_DIVE_TEMPLATE = '<!DOCTYPE html><html lang="en"><head><meta charset="UT
 'if(regionChart)regionChart.destroy();' +
 'regionChart=new Chart(ctx2,{type:"bar",data:{labels:nonZero,datasets:[{label:"Cases",data:nonZero.map(function(b){return rcounts[b];}),backgroundColor:"#3b6fd6"}]},' +
 'options:{responsive:true,maintainAspectRatio:false,indexAxis:"y",plugins:{legend:{display:false},title:{display:true,text:"Body Region",font:{size:12}},datalabels:{anchor:"end",align:"right",font:{size:10,weight:"600"}}},scales:{x:{beginAtZero:true}}},plugins:[ChartDataLabels]});' +
+'}catch(e){console.error("deep dive chart error",e);}' +
+'}' +
 'renderTable(f);' +
 '}' +
 'function renderTable(f){' +
@@ -1016,6 +1037,7 @@ var DEEP_DIVE_TEMPLATE = '<!DOCTYPE html><html lang="en"><head><meta charset="UT
 'renderTable(filtered());});});' +
 'document.getElementById("pPrev").addEventListener("click",function(){state.page--;renderTable(filtered());});' +
 'document.getElementById("pNext").addEventListener("click",function(){state.page++;renderTable(filtered());});' +
+'window.__ptRenderAll=render;' +
 'render();' +
 '})();' +
 '<\/script></body></html>';

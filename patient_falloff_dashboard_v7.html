@@ -150,7 +150,6 @@ table.ttab tbody tr:hover{background:var(--line-soft);}
 .pager{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:14px;font-size:.82rem;color:var(--ink-soft);}
 .pager button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;cursor:pointer;color:var(--ink);}
 .pager button:disabled{opacity:.4;cursor:default;}
-.exempt-star{color:var(--orange);margin-left:4px;font-size:.8em;}
 
 /* ---------- Excluded ---------- */
 .excl-toggle{display:flex;align-items:center;gap:10px;cursor:pointer;}
@@ -742,7 +741,6 @@ function renderTherapistTable(){
 
     var tdT = document.createElement('td');
     tdT.textContent = r.therapist;
-    if (r.exempt){ var star = document.createElement('span'); star.className='exempt-star'; star.title='Always shown (exempt threshold)'; star.textContent=' ★'; tdT.appendChild(star); }
     tr.appendChild(tdT);
 
     var tdC = document.createElement('td'); tdC.textContent = r.clinic; tr.appendChild(tdC);

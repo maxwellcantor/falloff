@@ -646,7 +646,7 @@ function renderClinicChart(){
   }
   var ctx = document.getElementById('clinicChart').getContext('2d');
   if (clinicChart) clinicChart.destroy();
-  var barColors = rows.map(function(r){ return r.therapist === state.therapist ? '#1c2430' : '#3b6fd6'; });
+  var barColors = rows.map(function(r){ return r.therapist === state.therapist ? '#1c2430' : '#a9c1ee'; });
   clinicChart = new Chart(ctx, {
     data: {
       labels: rows.map(function(r){ return r.therapist; }),
@@ -654,13 +654,13 @@ function renderClinicChart(){
         {
           type:'bar', label:'Cases', data: rows.map(function(r){return r.cases;}),
           backgroundColor: barColors, yAxisID:'y', order:2,
-          datalabels:{ anchor:'end', align:'top', color:'#1c2430', font:{size:10,weight:'600'} }
+          datalabels:{ anchor:'start', align:'end', offset:4, color:function(c){ return rows[c.dataIndex].therapist === state.therapist ? '#ffffff' : '#1c2430'; }, font:{size:11,weight:'700'} }
         },
         {
           type:'line', label:'Falloff %', data: rows.map(function(r){return r.falloff;}),
-          borderColor:'#d1473d', backgroundColor:'#d1473d', yAxisID:'y1', order:1, tension:.3,
-          pointRadius:4, pointBackgroundColor:'#d1473d',
-          datalabels:{ align:'bottom', color:'#d1473d', font:{size:10,weight:'600'}, formatter:function(v){return v.toFixed(0)+'%';} }
+          borderColor:'#e8590c', backgroundColor:'#e8590c', borderWidth:3.5, yAxisID:'y1', order:1, tension:.2,
+          pointRadius:6, pointHoverRadius:7, pointBackgroundColor:'#e8590c', pointBorderColor:'#ffffff', pointBorderWidth:2,
+          datalabels:{ align:'top', offset:8, color:'#7c2d12', backgroundColor:'#ffffff', borderColor:'#e8590c', borderWidth:1.5, borderRadius:4, padding:{top:2,bottom:2,left:5,right:5}, font:{size:11,weight:'700'}, formatter:function(v){return v.toFixed(0)+'%';} }
         }
       ]
     },
@@ -905,6 +905,13 @@ var DEEP_DIVE_TEMPLATE = '<!DOCTYPE html><html lang="en"><head><meta charset="UT
 '.fg{display:flex;flex-direction:column;gap:4px;}' +
 '.fg label{font-size:.7rem;text-transform:uppercase;color:var(--ink-soft);font-weight:600;letter-spacing:.03em;}' +
 '.fg select{border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:.85rem;background:#fff;min-width:150px;}' +
+'.qm{position:relative;}' +
+'.qb{border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:.85rem;background:#fff;min-width:150px;cursor:pointer;display:flex;justify-content:space-between;gap:8px;user-select:none;}' +
+'.qp{position:absolute;top:calc(100% + 6px);left:0;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:10px;z-index:40;min-width:190px;display:none;}' +
+'.qp.open{display:block;}' +
+'.qp button{width:100%;border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px;font-size:.76rem;cursor:pointer;margin-bottom:8px;}' +
+'.qo{display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:.85rem;cursor:pointer;border-radius:6px;}' +
+'.qo:hover{background:var(--line-soft);}' +
 '.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;}' +
 '.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);}' +
 '.kpi .l{font-size:.72rem;color:var(--ink-soft);font-weight:600;margin-bottom:4px;}' +
@@ -928,7 +935,7 @@ var DEEP_DIVE_TEMPLATE = '<!DOCTYPE html><html lang="en"><head><meta charset="UT
 '<header><div class="wrap">' +
 '<div><h1>Deep Dive — __THERAPIST_NAME__</h1><div class="sub" id="scopeSub">— cases</div></div>' +
 '<div class="filters">' +
-'<div class="fg"><label>Quarter</label><select id="fQ"><option value="All">All Quarters</option></select></div>' +
+'<div class="fg qm"><label>Quarters</label><div class="qb" id="qB"><span id="qL">All Quarters</span><span>▾</span></div><div class="qp" id="qP"><button id="qT">Toggle All</button><div id="qO"></div></div></div>' +
 '<div class="fg"><label>Bucket</label><select id="fB"><option value="All">All Buckets</option></select></div>' +
 '<div class="fg"><label>Body Region</label><select id="fR"><option value="All">All Regions</option></select></div>' +
 '<div class="fg"><label>PTA Involvement</label><select id="fP"><option value="All">All Cases</option><option value="yes">PTA Involved</option><option value="no">PT Only</option></select></div>' +
@@ -967,15 +974,20 @@ var DEEP_DIVE_TEMPLATE = '<!DOCTYPE html><html lang="en"><head><meta charset="UT
 'var BUCKETS = __BUCKETS_JSON__;' +
 'var REGION_COLOR = __REGION_COLOR_JSON__;' +
 'var BUCKET_COLOR = __BUCKET_COLOR_JSON__;' +
-'var state={q:"All",b:"All",r:"All",p:"All",sortKey:"dischargeDate",sortDir:"desc",page:1,pageSize:20};' +
+'var state={q:new Set(QUARTERS),b:"All",r:"All",p:"All",sortKey:"dischargeDate",sortDir:"desc",page:1,pageSize:20};' +
 'function fill(sel,vals){vals.forEach(function(v){var o=document.createElement("option");o.value=v;o.textContent=v;sel.appendChild(o);});}' +
-'fill(document.getElementById("fQ"),QUARTERS);' +
+'var qO=document.getElementById("qO");' +
+'function qLabel(){var n=state.q.size;document.getElementById("qL").textContent=n===QUARTERS.length?"All Quarters":(n===0?"No Quarters":n+" Quarters");}' +
+'QUARTERS.forEach(function(q){var l=document.createElement("label");l.className="qo";var cb=document.createElement("input");cb.type="checkbox";cb.checked=true;cb.value=q;cb.addEventListener("change",function(){if(cb.checked)state.q.add(q);else state.q.delete(q);qLabel();state.page=1;render();});var sp=document.createElement("span");sp.textContent=q;l.appendChild(cb);l.appendChild(sp);qO.appendChild(l);});' +
+'document.getElementById("qB").addEventListener("click",function(e){document.getElementById("qP").classList.toggle("open");e.stopPropagation();});' +
+'document.addEventListener("click",function(e){var p=document.getElementById("qP");if(!p.contains(e.target))p.classList.remove("open");});' +
+'document.getElementById("qT").addEventListener("click",function(){var allOn=state.q.size===QUARTERS.length;qO.querySelectorAll("input").forEach(function(cb){cb.checked=!allOn;if(allOn)state.q.delete(cb.value);else state.q.add(cb.value);});qLabel();state.page=1;render();});' +
 'fill(document.getElementById("fB"),BUCKETS);' +
 'fill(document.getElementById("fR"),BODY_REGIONS);' +
 'function pct(n,d){return d>0?(100*n/d):0;}' +
 'function avg(a){if(!a.length)return 0;var s=0;for(var i=0;i<a.length;i++)s+=a[i];return s/a.length;}' +
 'function filtered(){return CASES.filter(function(c){' +
-'if(state.q!=="All"&&c.quarter!==state.q)return false;' +
+'if(!state.q.has(c.quarter))return false;' +
 'if(state.b!=="All"&&c.bucket!==state.b)return false;' +
 'if(state.r!=="All"&&c.bodyRegion!==state.r)return false;' +
 'if(state.p==="yes"&&!(c.ptaVisits>0))return false;' +
@@ -1030,8 +1042,8 @@ var DEEP_DIVE_TEMPLATE = '<!DOCTYPE html><html lang="en"><head><meta charset="UT
 'document.getElementById("pPrev").disabled=state.page<=1;' +
 'document.getElementById("pNext").disabled=state.page>=totalPages;' +
 '}' +
-'["fQ","fB","fR","fP"].forEach(function(id){document.getElementById(id).addEventListener("change",function(e){' +
-'var map={fQ:"q",fB:"b",fR:"r",fP:"p"};state[map[id]]=e.target.value;state.page=1;render();});});' +
+'["fB","fR","fP"].forEach(function(id){document.getElementById(id).addEventListener("change",function(e){' +
+'var map={fB:"b",fR:"r",fP:"p"};state[map[id]]=e.target.value;state.page=1;render();});});' +
 'document.querySelectorAll("#tab thead th[data-k]").forEach(function(th){th.addEventListener("click",function(){' +
 'var k=th.getAttribute("data-k");if(state.sortKey===k)state.sortDir=state.sortDir==="asc"?"desc":"asc";else{state.sortKey=k;state.sortDir="asc";}' +
 'renderTable(filtered());});});' +
